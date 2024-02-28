@@ -7,13 +7,12 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"net/http"
-	"time"
-
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"
+	"net/http"
+	"time"
 )
 
 func GetSegmentData(ctx context.Context, uri string) ([]byte, error) {
@@ -30,8 +29,11 @@ func FromNetOsInfo(os *net.OSInfo) *drivers.OSInfo {
 		return nil
 	}
 	return &drivers.OSInfo{
-		StorageType: drivers.OSInfo_StorageType(os.StorageType),
-		S3Info:      FromNetS3Info(os.S3Info),
+		StorageType:          drivers.OSInfo_StorageType(os.StorageType),
+		S3Info:               FromNetS3Info(os.S3Info),
+		XXX_NoUnkeyedLiteral: os.XXX_NoUnkeyedLiteral,
+		XXX_unrecognized:     os.XXX_unrecognized,
+		XXX_sizecache:        os.XXX_sizecache,
 	}
 }
 
@@ -40,12 +42,15 @@ func FromNetS3Info(storage *net.S3OSInfo) *drivers.S3OSInfo {
 		return nil
 	}
 	return &drivers.S3OSInfo{
-		Host:       storage.Host,
-		Key:        storage.Key,
-		Policy:     storage.Policy,
-		Signature:  storage.Signature,
-		Credential: storage.Credential,
-		XAmzDate:   storage.XAmzDate,
+		Host:                 storage.Host,
+		Key:                  storage.Key,
+		Policy:               storage.Policy,
+		Signature:            storage.Signature,
+		Credential:           storage.Credential,
+		XAmzDate:             storage.XAmzDate,
+		XXX_NoUnkeyedLiteral: storage.XXX_NoUnkeyedLiteral,
+		XXX_unrecognized:     storage.XXX_unrecognized,
+		XXX_sizecache:        storage.XXX_sizecache,
 	}
 }
 
@@ -54,8 +59,11 @@ func ToNetOSInfo(os *drivers.OSInfo) *net.OSInfo {
 		return nil
 	}
 	return &net.OSInfo{
-		StorageType: net.OSInfo_StorageType(os.StorageType),
-		S3Info:      ToNetS3Info(os.S3Info),
+		StorageType:          net.OSInfo_StorageType(os.StorageType),
+		S3Info:               ToNetS3Info(os.S3Info),
+		XXX_NoUnkeyedLiteral: os.XXX_NoUnkeyedLiteral,
+		XXX_unrecognized:     os.XXX_unrecognized,
+		XXX_sizecache:        os.XXX_sizecache,
 	}
 }
 
@@ -64,12 +72,15 @@ func ToNetS3Info(storage *drivers.S3OSInfo) *net.S3OSInfo {
 		return nil
 	}
 	return &net.S3OSInfo{
-		Host:       storage.Host,
-		Key:        storage.Key,
-		Policy:     storage.Policy,
-		Signature:  storage.Signature,
-		Credential: storage.Credential,
-		XAmzDate:   storage.XAmzDate,
+		Host:                 storage.Host,
+		Key:                  storage.Key,
+		Policy:               storage.Policy,
+		Signature:            storage.Signature,
+		Credential:           storage.Credential,
+		XAmzDate:             storage.XAmzDate,
+		XXX_NoUnkeyedLiteral: storage.XXX_NoUnkeyedLiteral,
+		XXX_unrecognized:     storage.XXX_unrecognized,
+		XXX_sizecache:        storage.XXX_sizecache,
 	}
 }
 

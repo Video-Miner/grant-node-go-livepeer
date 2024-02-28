@@ -14,6 +14,7 @@ import (
 type RemoteTranscoderInfo struct {
 	Address  string
 	Capacity int
+	EthereumAddress ethcommon.Address
 }
 
 type StreamInfo struct {
@@ -136,4 +137,14 @@ type OrchestratorStore interface {
 
 type RoundsManager interface {
 	LastInitializedRound() *big.Int
+}
+
+type SceneClassificationResult struct {
+	Name        string  `json:"name"`
+	Probability float64 `json:"probability"`
+}
+type DetectionWebhookRequest struct {
+	ManifestID          string                      `json:"manifestID"`
+	SeqNo               uint64                      `json:"seqNo"`
+	SceneClassification []SceneClassificationResult `json:"sceneClassification"`
 }

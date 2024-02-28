@@ -50,13 +50,14 @@ func TestRedeemerServer_NewRedeemer(t *testing.T) {
 }
 
 func TestRedeemerServer_Start(t *testing.T) {
+	assert := assert.New(t)
 	require := require.New(t)
 
 	r, err := NewRedeemer(ethcommon.BytesToAddress([]byte("foo")), &eth.StubClient{}, &pm.LocalSenderMonitor{})
 	require.Nil(err)
 
-	url, err := url.ParseRequestURI("https://127.0.0.1:8990")
-	require.NoError(err)
+	url, err := url.ParseRequestURI("https://127.0.0.1:8935")
+	require.Nil(err)
 
 	tmpdir := t.TempDir()
 
@@ -69,10 +70,10 @@ func TestRedeemerServer_Start(t *testing.T) {
 
 	// Check that client can connect to server
 	_, err = NewRedeemerClient(url.Host, newStubSenderManager(), &stubTimeManager{})
-	require.NoError(err)
+	assert.Nil(err)
 
 	r.Stop()
-	require.NoError(<-errCh)
+	assert.Nil(<-errCh)
 }
 
 func TestRedeemerServer_QueueTicket(t *testing.T) {

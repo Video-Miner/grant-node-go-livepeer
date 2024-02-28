@@ -30,6 +30,7 @@ import (
 
 	lpcrypto "github.com/livepeer/go-livepeer/crypto"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
+	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 )
 
@@ -94,8 +95,8 @@ func (orch *orchestrator) TranscodeSeg(ctx context.Context, md *SegTranscodingMe
 	return orch.node.sendToTranscodeLoop(ctx, md, seg)
 }
 
-func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities) {
-	orch.node.serveTranscoder(stream, capacity, capabilities)
+func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities, ethereumAddr ethcommon.Address) {
+	orch.node.serveTranscoder(stream, capacity, capabilities, ethereumAddr)
 }
 
 func (orch *orchestrator) TranscoderResults(tcID int64, res *RemoteTranscoderResult) {
@@ -419,8 +420,9 @@ type TranscodeResult struct {
 
 // TranscodeData contains the transcoding output for an input segment
 type TranscodeData struct {
-	Segments []*TranscodedSegmentData
-	Pixels   int64 // Decoded pixels
+	Segments   []*TranscodedSegmentData
+	Pixels     int64 // Decoded pixels
+	Detections []ffmpeg.DetectData
 }
 
 // TranscodedSegmentData contains encoded data for a profile
@@ -732,7 +734,7 @@ func (n *LivepeerNode) endTranscodingSession(sessionId string, logCtx context.Co
 	}
 }
 
-func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities) {
+func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities, ethereumAddr ethcommon.Address) {
 	from := common.GetConnectionAddr(stream.Context())
 	coreCaps := CapabilitiesFromNetCapabilities(capabilities)
 	n.Capabilities.AddCapacity(coreCaps)
@@ -743,8 +745,8 @@ func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderS
 	}
 
 	// Manage blocks while transcoder is connected
-	n.TranscoderManager.Manage(stream, capacity, capabilities)
-	glog.V(common.DEBUG).Infof("Closing transcoder=%s channel", from)
+	n.TranscoderManager.Manage(stream, capacity, capabilities, ethereumAddr)
+	glog.V(common.DEBUG).Infof("Closing transcoder=%s channel ethAddr=%s", from,ethereumAddr)
 
 	if n.AutoSessionLimit {
 		defer n.SetMaxSessions(n.GetCurrentCapacity())
@@ -767,6 +769,7 @@ type RemoteTranscoder struct {
 	addr         string
 	capacity     int
 	load         int
+	ethereumAddr ethcommon.Address
 }
 
 // RemoteTranscoderFatalError wraps error to indicate that error is fatal
@@ -848,7 +851,7 @@ func (rt *RemoteTranscoder) Transcode(logCtx context.Context, md *SegTranscoding
 		return chanData.TranscodeData, chanData.Err
 	}
 }
-func NewRemoteTranscoder(m *RemoteTranscoderManager, stream net.Transcoder_RegisterTranscoderServer, capacity int, caps *Capabilities) *RemoteTranscoder {
+func NewRemoteTranscoder(m *RemoteTranscoderManager, stream net.Transcoder_RegisterTranscoderServer, capacity int, caps *Capabilities, ethereumAddr ethcommon.Address) *RemoteTranscoder {
 	return &RemoteTranscoder{
 		manager:      m,
 		stream:       stream,
@@ -856,6 +859,7 @@ func NewRemoteTranscoder(m *RemoteTranscoderManager, stream net.Transcoder_Regis
 		capacity:     capacity,
 		addr:         common.GetConnectionAddr(stream.Context()),
 		capabilities: caps,
+		ethereumAddr: ethereumAddr,
 	}
 }
 
@@ -896,6 +900,8 @@ type RemoteTranscoderManager struct {
 
 	// Map for keeping track of sessions and their respective transcoders
 	streamSessions map[string]*RemoteTranscoder
+	// Transcoder Pool Manager
+	Pool *PublicTranscoderPool
 }
 
 // RegisteredTranscodersCount returns number of registered transcoders
@@ -910,16 +916,16 @@ func (rtm *RemoteTranscoderManager) RegisteredTranscodersInfo() []common.RemoteT
 	rtm.RTmutex.Lock()
 	res := make([]common.RemoteTranscoderInfo, 0, len(rtm.liveTranscoders))
 	for _, transcoder := range rtm.liveTranscoders {
-		res = append(res, common.RemoteTranscoderInfo{Address: transcoder.addr, Capacity: transcoder.capacity})
+		res = append(res, common.RemoteTranscoderInfo{Address: transcoder.addr, EthereumAddress: transcoder.ethereumAddr, Capacity: transcoder.capacity})
 	}
 	rtm.RTmutex.Unlock()
 	return res
 }
 
 // Manage adds transcoder to list of live transcoders. Doesn't return until transcoder disconnects
-func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities) {
+func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities, ethereumAddr ethcommon.Address) {
 	from := common.GetConnectionAddr(stream.Context())
-	transcoder := NewRemoteTranscoder(rtm, stream, capacity, CapabilitiesFromNetCapabilities(capabilities))
+	transcoder := NewRemoteTranscoder(rtm, stream, capacity, CapabilitiesFromNetCapabilities(capabilities), ethereumAddr)
 	go func() {
 		ctx := stream.Context()
 		<-ctx.Done()
@@ -1076,5 +1082,14 @@ func (rtm *RemoteTranscoderManager) Transcode(ctx context.Context, md *SegTransc
 		}
 		return rtm.Transcode(ctx, md)
 	}
+
+	if rtm.Pool != nil && err == nil {
+		go func() {
+			if err := rtm.Pool.Reward(ctx,currentTranscoder, md, res); err != nil {
+				glog.Error(err)
+			}
+		}()
+	}
+
 	return res, err
 }

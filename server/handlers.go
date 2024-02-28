@@ -1427,6 +1427,75 @@ func (s *LivepeerServer) debugHandler() http.Handler {
 	})
 }
 
+// Open Pool
+func (s *LivepeerServer) poolStatsHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pool := s.LivepeerNode.TranscoderManager.Pool
+		if pool == nil {
+			glog.Errorf("Orchestrator is not running in public transcoder pool mode")
+			respond500(w, "Orchestrator is not running in public transcoder pool mode")
+			return
+		}
+
+		totalPayouts, err := pool.TotalPayouts()
+		if err != nil {
+			glog.Error("unable to get total pool payout")
+			respond500(w, "unable to get total pool payout")
+			return
+		}
+
+		comm := big.NewRat(pool.Commission().Int64(), 100).FloatString(2)
+
+		poolStats := struct {
+			Commission   string
+			Version      string
+			BasePrice    string
+			TotalPayouts string
+		}{
+			Commission:   comm,
+			Version:      core.LivepeerVersion,
+			BasePrice:    s.LivepeerNode.GetBasePrice("default").FloatString(0),
+			TotalPayouts: totalPayouts.String(),
+		}
+		respondJson(w, poolStats)
+	})
+}
+func (s *LivepeerServer) transcodersHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		type remoteT struct {
+			Nodes   []*common.RemoteTranscoderInfo
+			Pending *big.Int
+			Payout  *big.Int
+		}
+
+		transcoders := make(map[ethcommon.Address]*remoteT)
+
+		if s.LivepeerNode.TranscoderManager != nil {
+			tinfos := s.LivepeerNode.TranscoderManager.RegisteredTranscodersInfo()
+			for _, t := range tinfos {
+				rewards, err := s.LivepeerNode.Database.SelectRemoteTranscoder(t.EthereumAddress)
+				if err != nil {
+					glog.Error(err)
+					continue
+				}
+				tr, ok := transcoders[t.EthereumAddress]
+				if !ok {
+					transcoders[t.EthereumAddress] = &remoteT{
+						Nodes:   []*common.RemoteTranscoderInfo{&t},
+						Pending: rewards.Pending,
+						Payout:  rewards.Payout,
+					}
+				} else {
+					tr.Nodes = append(tr.Nodes, &t)
+				}
+			}
+		}
+
+		respondJson(w, transcoders)
+	})
+}
+
 func isL1Network(db ChainIdGetter) (bool, error) {
 	chainId, err := db.ChainID()
 	if err != nil {

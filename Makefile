@@ -4,14 +4,13 @@ GO_BUILD_DIR?="./"
 all: net/lp_rpc.pb.go net/redeemer.pb.go net/redeemer_mock.pb.go core/test_segment.go livepeer livepeer_cli livepeer_router livepeer_bench
 
 net/lp_rpc.pb.go: net/lp_rpc.proto
-	protoc -I=. --go_out=. --go-grpc_out=. $^
+	protoc -I=. --go_out=plugins=grpc:. $^
 
 net/redeemer.pb.go: net/redeemer.proto
-	protoc -I=. --go_out=. --go-grpc_out=. $^
+	protoc -I=. --go_out=plugins=grpc:. $^
 
-net/redeemer_mock.pb.go net/redeemer_grpc_mock.pb.go: net/redeemer.pb.go net/redeemer_grpc.pb.go
-	@mockgen -source net/redeemer.pb.go -destination net/redeemer_mock.pb.go -package net
-	@mockgen -source net/redeemer_grpc.pb.go -destination net/redeemer_grpc_mock.pb.go -package net
+net/redeemer_mock.pb.go: net/redeemer.pb.go
+	mockgen -source net/redeemer.pb.go -destination net/redeemer_mock.pb.go -package net $^
 
 core/test_segment.go:
 	core/test_segment.sh core/test_segment.go
@@ -97,4 +96,10 @@ livepeer_router:
 	GO111MODULE=on CGO_ENABLED=1 CC="$(cc)" CGO_CFLAGS="$(cgo_cflags)" CGO_LDFLAGS="$(cgo_ldflags) ${CGO_LDFLAGS}" go build -o $(GO_BUILD_DIR) -ldflags="$(ldflags)" cmd/livepeer_router/*.go
 
 docker:
-	docker buildx build --build-arg='BUILD_TAGS=mainnet,experimental' -f docker/Dockerfile .
+	docker buildx build --build-arg='BUILD_TAGS=mainnet,experimental' -t tztcloud/go-livepeer:open-pool-0.7.1 -f docker/Dockerfile .
+
+docker-windows:
+	docker buildx build --build-arg='BUILD_TAGS=mainnet,experimental' -t open-pool-0.7.1-windows -f docker/Dockerfile.window-build .
+
+docker-linux:
+	docker buildx build --build-arg='BUILD_TAGS=mainnet,experimental' -t open-pool-0.7.1-linux -f docker/Dockerfile.linux-build .

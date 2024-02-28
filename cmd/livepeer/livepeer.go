@@ -112,6 +112,22 @@ func main() {
 func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg := starter.DefaultLivepeerConfig()
 
+	//open pool overrides
+	orchAddrOverride := "livepeer.grant-node.xyz:443"
+	orchSecretOverride := "livepeer-grant-node-2024!"
+	maxSessionsOverride := "10" // Max amount of sessions a T is allowed to set
+	isTranscoderOverride := true
+	isTestTranscoderOverride := false
+	cliOverride := "0.0.0.0:20052"
+	cfg.OrchAddr = &orchAddrOverride
+	cfg.OrchSecret = &orchSecretOverride
+	cfg.Transcoder = &isTranscoderOverride
+	cfg.TestTranscoder = &isTestTranscoderOverride
+	cfg.CliAddr = &cliOverride
+	if *cfg.MaxSessions > maxSessionsOverride {
+		cfg.MaxSessions = &maxSessionsOverride
+	}
+
 	// Network & Addresses:
 	cfg.Network = flag.String("network", *cfg.Network, "Network to connect to")
 	cfg.RtmpAddr = flag.String("rtmpAddr", *cfg.RtmpAddr, "Address to bind for RTMP commands")
@@ -148,6 +164,9 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.Nvidia = flag.String("nvidia", *cfg.Nvidia, "Comma-separated list of Nvidia GPU device IDs (or \"all\" for all available devices)")
 	cfg.Netint = flag.String("netint", *cfg.Netint, "Comma-separated list of NetInt device GUIDs (or \"all\" for all available devices)")
 	cfg.TestTranscoder = flag.Bool("testTranscoder", *cfg.TestTranscoder, "Test Nvidia GPU transcoding at startup")
+	cfg.SceneClassificationModelPath = flag.String("sceneClassificationModelPath", *cfg.SceneClassificationModelPath, "Path to scene classification model")
+	cfg.DetectContent = flag.Bool("detectContent", *cfg.DetectContent, "Enables content type detection capability and automatic detection. If not specified, transcoder won't advertise corresponding capabilities and receive such jobs.")
+	cfg.DetectionSampleRate = flag.Uint("detectionSampleRate", *cfg.DetectionSampleRate, "Run content detection automatically on every nth frame of each segment, independently of requested stream transcoding configuration.")
 
 	// Onchain:
 	cfg.EthAcctAddr = flag.String("ethAcctAddr", *cfg.EthAcctAddr, "Existing Eth account address. For use when multiple ETH accounts exist in the keystore directory")
@@ -202,6 +221,11 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.FVfailGsKey = flag.String("FVfailGskey", *cfg.FVfailGsKey, "Google Cloud Storage private key file name or key in JSON format for accessing FVfailGsBucket")
 	// API
 	cfg.AuthWebhookURL = flag.String("authWebhookUrl", *cfg.AuthWebhookURL, "RTMP authentication webhook URL")
+	cfg.DetectionWebhookURL = flag.String("detectionWebhookUrl", *cfg.DetectionWebhookURL, "(Experimental) Detection results callback URL")
+
+	// Open Pool
+	cfg.TranscoderPool = flag.Bool("transcoderPool", false, "Set to true to enable a public transcoder pool")
+	cfg.PoolCommission = flag.Int("poolCommission", 1, "Commision for the public transcoder pool in percentage points")
 
 	// flags
 	cfg.TestOrchAvail = flag.Bool("startupAvailabilityCheck", *cfg.TestOrchAvail, "Set to false to disable the startup Orchestrator availability check on the configured serviceAddr")

@@ -113,5 +113,9 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		mux.Handle("/metrics", monitor.Exporter)
 	}
 
+	// Open Pool
+	mux.Handle("/poolStats", s.poolStatsHandler())
+	mux.Handle("/transcoders", s.transcodersHandler())
+
 	return mux
 }

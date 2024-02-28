@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +21,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/livepeer/lpms/ffmpeg"
+
 	"github.com/cenkalti/backoff"
 	"github.com/golang/glog"
 	"golang.org/x/net/http2"
@@ -28,6 +31,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -43,17 +47,20 @@ var errZeroCapacity = errors.New("zero capacity")
 var errInterrupted = errors.New("execution interrupted")
 var errCapabilities = errors.New("incompatible segment capabilities")
 
+var errNoEthAddress = errors.New("No ethereum address")
+
 // Standalone Transcoder
 
 // RunTranscoder is main routing of standalone transcoder
 // Exiting it will terminate executable
-func RunTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability) {
+func RunTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability, ethereumAddr ethcommon.Address) {
 	expb := backoff.NewExponentialBackOff()
 	expb.MaxInterval = time.Minute
 	expb.MaxElapsedTime = 0
+	// TODO: orchAddr := findFastestOrchestrator(orchURLs)
 	backoff.Retry(func() error {
 		glog.Info("Registering transcoder to ", orchAddr)
-		err := runTranscoder(n, orchAddr, capacity, caps)
+		err := runTranscoder(n, orchAddr, capacity, caps, ethereumAddr)
 		glog.Info("Unregistering transcoder: ", err)
 		if _, fatal := err.(core.RemoteTranscoderFatalError); fatal {
 			glog.Info("Terminating transcoder because of ", err)
@@ -64,6 +71,28 @@ func RunTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 		return err
 	}, expb)
 }
+
+// returns the url of the fastests orchestrator as a string
+// func findFastestOrchestrator(orchURLs []*url.URL) string {
+// 	ctx, cancel := context.WithTimeout(context.Background(), GRPCConnectTimeout)
+// 	defer cancel()
+// 	pong := make(chan string, len(orchURLs))
+// 	for _, o := range orchURLs {
+// 		go func(o *url.URL) {
+// 			_, err := sendPing(o, nil)
+// 			if err != nil {
+// 				return
+// 			}
+// 			pong <- strings.TrimPrefix(o.String(), "https://")
+// 		}(o)
+// 	}
+// 	select {
+// 	case <-ctx.Done():
+// 		return ""
+// 	case orch := <-pong:
+// 		return orch
+// 	}
+// }
 
 func checkTranscoderError(err error) error {
 	if err != nil {
@@ -81,7 +110,7 @@ func checkTranscoderError(err error) error {
 	return err
 }
 
-func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability) error {
+func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability, ethereumAddr ethcommon.Address) error {
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	conn, err := grpc.Dial(orchAddr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
@@ -96,12 +125,23 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 	ctx, cancel := context.WithCancel(ctx)
 	// Silence linter
 	defer cancel()
-	r, err := c.RegisterTranscoder(ctx, &net.RegisterRequest{Secret: n.OrchSecret, Capacity: int64(capacity),
-		Capabilities: core.NewCapabilities(caps, []core.Capability{}).ToNetCapabilities()})
+	glog.Info("***** RegisterTranscoder eth_addr  *****", ethereumAddr)
+
+	r, err := c.RegisterTranscoder(ctx, &net.RegisterRequest{
+		Secret:          n.OrchSecret,
+		Capacity:        int64(capacity),
+		Capabilities:    core.NewCapabilities(caps, []core.Capability{}).ToNetCapabilities(),
+		EthereumAddress: ethereumAddr.Bytes(),
+	})
+
 	if err := checkTranscoderError(err); err != nil {
 		glog.Error("Could not register transcoder to orchestrator ", err)
 		return err
 	}
+
+	glog.Info("***** Transcoder succesfully started! *****")
+	glog.Infof("Connected to: %v", orchAddr)
+	glog.Info("Waiting for segments...")
 
 	// Catch interrupt signal to shut down transcoder
 	exitc := make(chan os.Signal)
@@ -265,7 +305,17 @@ func sendTranscodeResult(ctx context.Context, n *core.LivepeerNode, orchAddr str
 	req.Header.Set("TaskId", strconv.FormatInt(notify.TaskId, 10))
 
 	pixels := int64(0)
+	// add detections
 	if tData != nil {
+		if len(tData.Detections) > 0 {
+			detectData, err := json.Marshal(tData.Detections)
+			if err != nil {
+				clog.Errorf(ctx, "Error posting results, couldn't serialize detection data orch=%s staskId=%d url=%s err=%q", orchAddr,
+					notify.TaskId, notify.Url, err)
+				return
+			}
+			req.Header.Set("Detections", string(detectData))
+		}
 		pixels = tData.Pixels
 	}
 	req.Header.Set("Pixels", strconv.FormatInt(pixels, 10))
@@ -296,7 +346,8 @@ func sendTranscodeResult(ctx context.Context, n *core.LivepeerNode, orchAddr str
 
 func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transcoder_RegisterTranscoderServer) error {
 	from := common.GetConnectionAddr(stream.Context())
-	glog.Infof("Got a RegisterTranscoder request from transcoder=%s capacity=%d", from, req.Capacity)
+	ethAddress := ethcommon.BytesToAddress(req.EthereumAddress)
+	glog.Infof("Got a RegisterTranscoder request from transcoder=%s capacity=%d address=%v", from, req.Capacity, ethAddress)
 
 	if req.Secret != h.orchestrator.TranscoderSecret() {
 		glog.Errorf("err=%q", errSecret.Error())
@@ -306,12 +357,18 @@ func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transco
 		glog.Errorf("err=%q", errZeroCapacity.Error())
 		return errZeroCapacity
 	}
+	if req.EthereumAddress == nil {
+		glog.Errorf("err=%q", errNoEthAddress.Error())
+		return errNoEthAddress
+	}
+
 	// handle case of legacy Transcoder which do not advertise capabilities
 	if req.Capabilities == nil {
 		req.Capabilities = core.NewCapabilities(core.DefaultCapabilities(), nil).ToNetCapabilities()
 	}
+
 	// blocks until stream is finished
-	h.orchestrator.ServeTranscoder(stream, int(req.Capacity), req.Capabilities)
+	h.orchestrator.ServeTranscoder(stream, int(req.Capacity), req.Capabilities, ethcommon.BytesToAddress(req.EthereumAddress))
 	return nil
 }
 
@@ -346,6 +403,22 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		glog.Error("Could not parse task ID ", err)
 		http.Error(w, "Invalid Task ID", http.StatusBadRequest)
 		return
+	}
+
+	// read detection data - only scene classification is supported
+	var detections []ffmpeg.DetectData
+	var sceneDetections []ffmpeg.SceneClassificationData
+	var detectionsHeader = r.Header.Get("Detections")
+	if len(detectionsHeader) > 0 {
+		err = json.Unmarshal([]byte(detectionsHeader), &sceneDetections)
+		if err != nil {
+			glog.Error("Could not parse detection data ", err)
+			http.Error(w, "Invalid detection data", http.StatusBadRequest)
+			return
+		}
+		for _, sd := range sceneDetections {
+			detections = append(detections, sd)
+		}
 	}
 
 	var res core.RemoteTranscoderResult
@@ -412,8 +485,9 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		res.TranscodeData = &core.TranscodeData{
-			Segments: segments,
-			Pixels:   decodedPixels,
+			Segments:   segments,
+			Pixels:     decodedPixels,
+			Detections: detections,
 		}
 		dlDur := time.Since(start)
 		glog.V(common.VERBOSE).Infof("Downloaded results from remote transcoder=%s taskId=%d dur=%s", r.RemoteAddr, tid, dlDur)
