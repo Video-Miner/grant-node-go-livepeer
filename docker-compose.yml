@@ -1,0 +1,14 @@
+version: '3.9'
+
+services:
+  transcoder:
+    image: tztcloud/go-livepeer:grant-node-0.7.1
+    container_name: "gn-trans"
+    hostname: "gn-trans"
+    runtime: nvidia
+    restart: unless-stopped
+    volumes:
+      - lpData:/root/.lpData
+    command: '-ethAcctAddr=YOUR_ETH_ADDR -nvidia=0'
+volumes:
+  lpData:
