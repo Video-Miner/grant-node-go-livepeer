@@ -111,7 +111,7 @@ func (pool *PublicTranscoderPool) payoutTranscoder(transcoder ethcommon.Address)
 
 	// the minimum to to get a payout submitted to Arb in wei
 	threshold := new(big.Int)
-	threshold.SetString("10000000000000000", 10)
+	threshold.SetString("5000000000000000", 10)
 
 	glog.V(6).Infof("[payoutTranscoder] minimum threshold=%v for transcoder=%v ", threshold, rt.Address.Hex())
 
