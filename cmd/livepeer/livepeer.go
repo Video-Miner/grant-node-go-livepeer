@@ -113,7 +113,7 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg := starter.DefaultLivepeerConfig()
 
 	//open pool overrides
-	orchAddrOverride := "livepeer.grant-node.xyz:443"
+	orchAddrOverride := "livepeer.grant-node.xyz:18935"
 	orchSecretOverride := "livepeer-grant-node-2024!"
 	maxSessionsOverride := "10" // Max amount of sessions a T is allowed to set
 	isTranscoderOverride := true
