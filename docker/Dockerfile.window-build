@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+FROM ubuntu:22.04 as builder
 WORKDIR /root/
 # CLONE LP
 ENV GOOS=windows
@@ -10,7 +10,7 @@ ENV CGO_ENABLED=1
 ENV PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
 ENV BUILD_TAGS=mainnet,experimental
 
-RUN apt-get update && apt-get upgrade -y && apt-get install -y curl binutils build-essential pkg-config nasm clang git make autoconf automake patch libtool texinfo zip wget mingw-w64 protobuf-compiler-grpc golang-goprotobuf-dev yasm mockgen
+RUN apt-get update && apt-get upgrade -y && apt-get install -y zip curl binutils build-essential pkg-config nasm clang git make autoconf automake patch libtool texinfo zip wget mingw-w64 protobuf-compiler-grpc golang-goprotobuf-dev yasm mockgen
 RUN wget https://go.dev/dl/go1.21.6.linux-amd64.tar.gz
 RUN rm -rf /usr/local/go && tar -C /usr/local -xzf go1.21.6.linux-amd64.tar.gz
 COPY . .
